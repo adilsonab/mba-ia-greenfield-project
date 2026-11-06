@@ -141,7 +141,7 @@ Deliver upload and processing of videos up to 10GB without impacting API perform
 ### SI-03.5 — Endpoint POST /videos (pré-cadastro do rascunho e plano de upload)
 
 **Route:** POST /videos
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-start-upload.plan.md`
 **Authorization:** Authenticated — o vídeo é criado no canal do próprio usuário (per `### Authorization Matrix`)
 
 **Description:** Ao iniciar o upload, cria o vídeo como rascunho no canal do usuário, abre o multipart no storage e devolve as URLs pré-assinadas de cada parte — nenhum byte do arquivo passa pela API.
@@ -180,7 +180,7 @@ Deliver upload and processing of videos up to 10GB without impacting API perform
 ### SI-03.6 — Endpoint GET /videos/:publicId/upload (retomada do upload)
 
 **Route:** GET /videos/:publicId/upload
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-upload-resume.plan.md`
 **Authorization:** Owner — não-dono recebe `404 VIDEO_NOT_FOUND` (per `### Authorization Matrix`)
 
 **Description:** Permite retomar um upload interrompido: informa as partes já armazenadas e emite URLs novas apenas para as que faltam, cumprindo o "retomar em caso de falha de conexão" do plano do projeto.
@@ -213,7 +213,7 @@ Deliver upload and processing of videos up to 10GB without impacting API perform
 ### SI-03.7 — Endpoint POST /videos/:publicId/upload/complete (conclusão e enfileiramento)
 
 **Route:** POST /videos/:publicId/upload/complete
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-upload-complete.plan.md`
 **Authorization:** Owner — não-dono recebe `404 VIDEO_NOT_FOUND` (per `### Authorization Matrix`)
 
 **Description:** Conclui o multipart, confere o objeto armazenado e publica o job `video.process`, disparando o processamento automático assim que o upload termina.
@@ -317,7 +317,7 @@ Deliver upload and processing of videos up to 10GB without impacting API perform
 ### SI-03.10 — Endpoint GET /videos/:publicId (detalhe, status e metadados)
 
 **Route:** GET /videos/:publicId
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-detail.plan.md`
 **Authorization:** Owner — não-dono recebe `404 VIDEO_NOT_FOUND` (per `### Authorization Matrix`)
 
 **Description:** Expõe ao dono o estado do vídeo — ciclo de status, erro de processamento, metadados extraídos e a URL da thumbnail — que é o ponto de observação do processamento assíncrono.
@@ -349,7 +349,7 @@ Deliver upload and processing of videos up to 10GB without impacting API perform
 ### SI-03.11 — Endpoint GET /videos/:publicId/stream (reprodução via streaming)
 
 **Route:** GET /videos/:publicId/stream
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-stream.plan.md`
 **Authorization:** Owner — não-dono recebe `404 VIDEO_NOT_FOUND`; apenas `ready` (per `### Authorization Matrix`)
 
 **Description:** Devolve uma URL de curta duração que o player carrega direto do storage, que responde `Range` com `206 Partial Content` — a reprodução começa sem baixar o arquivo inteiro e sem tráfego de vídeo pela API.
@@ -380,7 +380,7 @@ Deliver upload and processing of videos up to 10GB without impacting API perform
 ### SI-03.12 — Endpoint GET /videos/:publicId/download (download do vídeo)
 
 **Route:** GET /videos/:publicId/download
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-download.plan.md`
 **Authorization:** Owner — não-dono recebe `404 VIDEO_NOT_FOUND`; apenas `ready` (per `### Authorization Matrix`)
 
 **Description:** Devolve uma URL de curta duração que baixa o arquivo original como anexo, com o nome de arquivo enviado pelo usuário.
