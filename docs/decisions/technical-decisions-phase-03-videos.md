@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-11-06
 scope_description: "Backend foundation for video upload and processing: local S3-compatible storage, S3 client and key layout, presigned-URL reachability, queue technology, video worker deployment and FFmpeg integration, 10GB direct-to-storage upload protocol and policies, processing trigger, video status lifecycle and failure policy, unique short URL id, streaming/download delivery and access, and the async-pipeline test strategy."
 ---
@@ -46,7 +46,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (Chainguard MinIO)** — keeps the architecture's "MinIO locally / S3 in production" statement true with no build cost; the `nonroot` volume issue is a one-line Compose setting, and pinning by digest gives reproducibility. Because the application only speaks the S3 API (TD-02), switching to Option C later is a Compose-only change.
 
-**Decision:** _[pending]_
+**Decision:** A (Chainguard MinIO build — `cgr.dev/chainguard/minio`)
 
 ---
 
@@ -72,7 +72,8 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (AWS SDK v3)** — the 10GB protocol (TD-08) depends on presigning `UploadPart`, which the AWS SDK supports directly, and it is the client that will run unchanged against S3 in production.
 
-**Decision:** _[pending]_
+**Decision:** A (AWS SDK v3 — `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`)
+**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner
 
 ---
 
@@ -103,7 +104,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (dual endpoint + `storage.localhost` alias)** — the only option that works out of the box for both the browser and the in-container test runner without touching the host OS; production differs only by env value.
 
-**Decision:** _[pending]_
+**Decision:** A (Dual endpoint config + `storage.localhost` shared public hostname alias)
 
 ---
 
@@ -129,7 +130,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (single bucket, per-video prefix)** — every access in this phase goes through presigned URLs (TD-14/TD-15), so per-bucket policies bring no benefit, and a per-video prefix keeps worker retries idempotent and later deletion trivial.
 
-**Decision:** _[pending]_
+**Decision:** A (Single bucket, per-video prefix)
 
 ---
 
@@ -160,7 +161,8 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (BullMQ on Redis/Valkey, `@nestjs/bullmq` 11.x)** — it is the official NestJS recipe, ships the retry/backoff/stalled-job features TD-12 needs without custom topology, stays on the CommonJS toolchain the test suite runs on, and gives a dedicated queue service in Compose. The cost is one small Redis container.
 
-**Decision:** _[pending]_
+**Decision:** A (BullMQ on Redis/Valkey via `@nestjs/bullmq` 11.x)
+**Libraries:** @nestjs/bullmq, bullmq
 
 ---
 
@@ -191,7 +193,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (same codebase, separate entrypoint + `video-worker` service)** — delivers the separate worker container of the architecture while reusing every existing convention (entities, config, repository pattern, tests); Option B's isolation is not worth duplicating code at this project's size.
 
-**Decision:** _[pending]_
+**Decision:** A (Same NestJS codebase, separate entrypoint and `video-worker` Compose service)
 
 ---
 
@@ -217,7 +219,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (Debian ffmpeg + execFile)** — maintained binaries from the base image's distribution, no stale npm packages, and a thin typed wrapper we own and test. Thumbnail policy for the plan: one JPEG frame at **10% of the duration** (falling back to `0s` for clips shorter than 1s), scaled to a max width of 1280px.
 
-**Decision:** _[pending]_
+**Decision:** A (Debian `ffmpeg` package + `child_process.execFile`)
 
 ---
 
@@ -248,7 +250,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (S3 multipart with presigned part URLs)** — the only option that meets 10GB on real S3, keeps every upload byte off the API, and is resumable per part without adding a service; the extra client logic belongs to the future upload screen.
 
-**Decision:** _[pending]_
+**Decision:** A (S3 multipart upload with presigned part URLs, direct to storage)
 
 ---
 
@@ -274,7 +276,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (explicit completion endpoint)** — the multipart protocol already requires a completion call, so making the API own it puts validation, the status transition and the enqueue in one tested place with no provider-specific wiring.
 
-**Decision:** _[pending]_
+**Decision:** A (Explicit completion endpoint on the API)
 
 ---
 
@@ -300,7 +302,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (server-dictated plan + `HeadObject` verification)** — rejects invalid uploads before a byte moves, keeps S3's part constraints server-side, and closes the "declared vs real size" loophole. Defaults for the plan: max size `10 GiB`, part size `64 MiB`, part URL expiry `1h` (re-requestable for resume), MIME allowlist `video/mp4`, `video/webm`, `video/quicktime`, `video/x-matroska`.
 
-**Decision:** _[pending]_
+**Decision:** A (Server-dictated upload plan + `HeadObject` verification on completion)
 
 ---
 
@@ -326,7 +328,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option B (two orthogonal columns)** — the phase's lifecycle is fully represented (`draft` at pre-registration, then `processing_status` → `processing` → `ready`/`failed`) while leaving Phase 04's publication flow a pure extension instead of a migration of overloaded values.
 
-**Decision:** _[pending]_
+**Decision:** B (Two orthogonal columns — publication `status` + `processing_status`)
 
 ---
 
@@ -357,7 +359,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (queue-native retries, then `failed`)** — self-heals transient errors, guarantees a terminal DB state, and costs no extra components. Defaults for the plan: `3` attempts, exponential backoff starting at `10s`; permanent ffprobe errors (unreadable/no video stream) may short-circuit to `failed` without further retries.
 
-**Decision:** _[pending]_
+**Decision:** A (Queue-native retries, then terminal `failed`)
 
 ---
 
@@ -388,7 +390,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option B (11-char base64url random id + unique constraint)** — meets "short" and "never conflicts" (DB-enforced) while staying unguessable for Phase 04's unlisted videos, with no new dependency; the UUID stays the internal primary key.
 
-**Decision:** _[pending]_
+**Decision:** B (11-char base64url random id from `crypto.randomBytes`, unique column + retry)
 
 ---
 
@@ -419,7 +421,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (presigned GET URLs returned as JSON)** — the storage already implements Range/206, the bytes never touch the API, and it is exactly the "frontend streams from Object Storage" relation in the architecture; short expiry (default `1h` for the plan) limits link sharing.
 
-**Decision:** _[pending]_
+**Decision:** A (Presigned GET URLs returned as JSON; storage serves Range/206)
 
 ---
 
@@ -445,7 +447,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (owner-only until publication)** — keeps drafts private, which is the safe default, and lets Phase 04 introduce anonymous access exactly where its visibility rules (public/unlisted) define it.
 
-**Decision:** _[pending]_
+**Decision:** A (Owner-only until publication exists)
 
 ---
 
@@ -476,7 +478,7 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 **Recommendation:** **Option A (e2e against the running worker + processor integration tests)** — it is the only option that proves the delivered pipeline with the real worker container, which is exactly what the phase must demonstrate; FFmpeg is installed in the shared dev image (TD-06/TD-07) so fixtures are generated at test time.
 
-**Decision:** _[pending]_
+**Decision:** A (E2E against the running `video-worker` service + processor integration tests)
 
 ---
 
@@ -484,19 +486,19 @@ _Version facts gathered for this research (2026-11-06):_ installed `@nestjs/core
 
 | ID | Scope | Decision | Recommendation | Choice |
 |----|-------|----------|---------------|--------|
-| TD-01 | Repo-wide | Local S3-compatible server image | A — Chainguard MinIO | _[pending]_ |
-| TD-02 | Backend | S3 client library | A — AWS SDK v3 | _[pending]_ |
-| TD-03 | Cross-layer | Presigned URL endpoint reachability | A — Dual endpoint + `storage.localhost` alias | _[pending]_ |
-| TD-04 | Backend | Bucket and object key layout | A — Single bucket, per-video prefix | _[pending]_ |
-| TD-05 | Backend | Queue technology | A — BullMQ on Redis/Valkey (`@nestjs/bullmq` 11.x) | _[pending]_ |
-| TD-06 | Backend | Video worker deployment model | A — Same codebase, separate entrypoint + service | _[pending]_ |
-| TD-07 | Backend | FFmpeg integration | A — Debian ffmpeg + `execFile` | _[pending]_ |
-| TD-08 | Cross-layer | 10GB upload protocol | A — S3 multipart with presigned part URLs | _[pending]_ |
-| TD-09 | Cross-layer | Upload completion and processing trigger | A — Explicit completion endpoint | _[pending]_ |
-| TD-10 | Cross-layer | Upload validation and part-sizing policy | A — Server-dictated plan + `HeadObject` check | _[pending]_ |
-| TD-11 | Backend | Video status model | B — Publication `status` + `processing_status` | _[pending]_ |
-| TD-12 | Backend | Processing failure and retry policy | A — Queue retries, then `failed` | _[pending]_ |
-| TD-13 | Cross-layer | Unique short video URL identifier | B — 11-char base64url random id + unique | _[pending]_ |
-| TD-14 | Cross-layer | Streaming and download delivery | A — Presigned GET URLs as JSON | _[pending]_ |
-| TD-15 | Backend | Stream and download access policy | A — Owner-only until publication | _[pending]_ |
-| TD-16 | Repo-wide | Async pipeline test strategy | A — E2E against running worker + integration | _[pending]_ |
+| TD-01 | Repo-wide | Local S3-compatible server image | A — Chainguard MinIO | A |
+| TD-02 | Backend | S3 client library | A — AWS SDK v3 | A |
+| TD-03 | Cross-layer | Presigned URL endpoint reachability | A — Dual endpoint + `storage.localhost` alias | A |
+| TD-04 | Backend | Bucket and object key layout | A — Single bucket, per-video prefix | A |
+| TD-05 | Backend | Queue technology | A — BullMQ on Redis/Valkey (`@nestjs/bullmq` 11.x) | A |
+| TD-06 | Backend | Video worker deployment model | A — Same codebase, separate entrypoint + service | A |
+| TD-07 | Backend | FFmpeg integration | A — Debian ffmpeg + `execFile` | A |
+| TD-08 | Cross-layer | 10GB upload protocol | A — S3 multipart with presigned part URLs | A |
+| TD-09 | Cross-layer | Upload completion and processing trigger | A — Explicit completion endpoint | A |
+| TD-10 | Cross-layer | Upload validation and part-sizing policy | A — Server-dictated plan + `HeadObject` check | A |
+| TD-11 | Backend | Video status model | B — Publication `status` + `processing_status` | B |
+| TD-12 | Backend | Processing failure and retry policy | A — Queue retries, then `failed` | A |
+| TD-13 | Cross-layer | Unique short video URL identifier | B — 11-char base64url random id + unique | B |
+| TD-14 | Cross-layer | Streaming and download delivery | A — Presigned GET URLs as JSON | A |
+| TD-15 | Backend | Stream and download access policy | A — Owner-only until publication | A |
+| TD-16 | Repo-wide | Async pipeline test strategy | A — E2E against running worker + integration | A |
