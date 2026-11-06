@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/14 completed
+**SIs:** 9/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -82,9 +82,17 @@
   - Verified empirically before coding: Debian's ffmpeg ships `libx264` + `aac`; CBR with `nal-hrd=cbr` pads output to a target size (used by `generateVideoFixture({ minSizeBytes })` for multi-part uploads in SI-03.9/SI-03.13 — not exercised by this SI's own tests).
 
 ### SI-03.9 — Video worker: entrypoint, processor da fila e serviço no Compose
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 15 passing (`video-processing.processor.spec.ts` 10, `video-processing.processor.integration-spec.ts` 4 with real Postgres/MinIO/ffmpeg, `worker.module.spec.ts` 1); regression `app.e2e-spec.ts` + `videos-start-upload.e2e-spec.ts` (7) green; `tsc --noEmit` exit 0; `video-worker` service running in Compose and logging "Video worker started — consuming queue video-processing"
+- **Observations:**
+  - Fix loop: 1 attempt — the unit spec's `extractFrame` mock used a dynamic `import('fs/promises')`, which Jest's CommonJS runtime rejects without `--experimental-vm-modules`; replaced with a static import.
+  - The worker runs from source in dev (`start:worker:dev` = `TS_NODE_TRANSPILE_ONLY=true node --watch -r ts-node/register src/worker.ts`) instead of `nest start --watch --entryFile worker`: both processes share the bind-mounted project and `deleteOutDir: true` would make each `nest start --watch` wipe the other's `dist/`. `start:worker` (`node dist/worker`) is the build/production path.
+  - **Dev limitation on Windows hosts:** Docker Desktop does not propagate file-change events from Windows bind mounts into Linux containers, so `node --watch` does not reload the worker on edits — `docker compose restart video-worker` is needed after changing worker code. Works on Linux/macOS hosts. Document in SI-03.14.
+  - Booting the worker surfaced `Entity metadata for Video#channel was not found`: `autoLoadEntities` only knows `forFeature` entities. Fixed by importing `UsersModule` (which imports `ChannelsModule`) into `VideoProcessingWorkerModule`, so `User`/`Channel` stay registered by their owning modules.
+  - Extracted `typeOrmRootModule()` (`src/database/typeorm-root.module.ts`), used by `AppModule` and `WorkerModule`, honouring the inherited convention that DB connection parameters are never duplicated.
+  - `VideoProcessingWorkerModule` (domain module) holds the processor; `WorkerModule` only wires infrastructure, mirroring the `AppModule` rule. The processor writes the video's processing columns through `Repository<Video>`, as the architecture's "worker → DB updates" relation states.
+  - Final row write uses `save` (not `update`): TypeORM's `QueryDeepPartialEntity` rejects the `Record<string, unknown>` type of the jsonb `metadata` column.
+  - On its first start the worker drained the 2 `video.process` jobs left by SI-03.7 e2e runs as no-ops (videos already deleted) — `wait=0`, `failed=0`.
 
 ### SI-03.10 — Endpoint GET /videos/:publicId (detalhe, status e metadados)
 - **Status:** pending

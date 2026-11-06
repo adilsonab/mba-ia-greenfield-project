@@ -70,6 +70,26 @@ services:
       timeout: 5s
       retries: 10
 
+  # Video worker (phase-03-videos/TD-06): same codebase and image as the API,
+  # separate process without HTTP, consuming the `video-processing` queue.
+  # Runs from source (ts-node + node --watch) so it never races the API's
+  # `nest start --watch` over the shared dist/ folder. Needs `npm install`
+  # once (shared node_modules through the bind mount).
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["npm", "run", "start:worker:dev"]
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # Queue backend for BullMQ (phase-03-videos/TD-05).
   redis:
     image: redis:7-alpine
