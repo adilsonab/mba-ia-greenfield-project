@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/14 completed
+**SIs:** 5/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -57,9 +57,13 @@
 - **Observations:** none
 
 ### SI-03.8 — MediaModule: extração de metadados (ffprobe) e thumbnail (ffmpeg)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12 passing (`media-probe.service.spec.ts`, `media-probe.service.integration-spec.ts`, `thumbnail.service.integration-spec.ts`) with the real ffprobe/ffmpeg 5.1.9; `tsc --noEmit` exit 0
+- **Observations:**
+  - Fix loop: 1 attempt. A unit expectation of mine assumed `thumbnailTimestamp(3.025) === 0.303`, but `3.025 * 0.1` is `0.30249…` in IEEE 754 and rounds to `0.302`; the assertion now uses `toBeCloseTo` (millisecond precision for `-ss` is the real contract) plus an exact `4.5 → 0.45` case.
+  - `mapProbeOutput` and `thumbnailTimestamp` are exported pure functions so the mapping/policy is unit-tested without the binaries; thumbnail policy constants live in `src/media/media.constants.ts`.
+  - ffmpeg's filter needs the comma escaped (`scale=min(1280\,iw):-2`), passed literally through `execFile` (no shell).
+  - Verified empirically before coding: Debian's ffmpeg ships `libx264` + `aac`; CBR with `nal-hrd=cbr` pads output to a target size (used by `generateVideoFixture({ minSizeBytes })` for multi-part uploads in SI-03.9/SI-03.13 — not exercised by this SI's own tests).
 
 ### SI-03.9 — Video worker: entrypoint, processor da fila e serviço no Compose
 - **Status:** pending
