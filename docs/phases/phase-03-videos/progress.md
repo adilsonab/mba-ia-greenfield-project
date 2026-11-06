@@ -1,6 +1,6 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
+**Status:** completed
 **SIs:** 14/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
@@ -131,3 +131,11 @@
 - **Observations:**
   - Root `CLAUDE.md`: besides the Videos section and the queue "TBD" → "BullMQ + Redis", fixed two stale lines in "Repository Structure" (`next-frontend` "not yet initialized" and a non-existent `comments` module), since an inconsistent CLAUDE.md is an automatic-fail criterion.
   - `nestjs-project/CLAUDE.md`: readiness checks quote the real outputs (`The cluster 'local' is ready`, `PONG`, worker start log); documented the `storage.localhost` exception, the curl RFC 6761 caveat, the Windows `--watch` limitation and the worker precondition for e2e; also listed `mailpit`, already in Compose but missing from the services list.
+
+## Final verification
+
+- **Definition of Done (2026-11-06):** `npm test` 39/39 suites, 249/249 tests (two consecutive full runs green); `npm run test:e2e` 10/10 suites, 84/84 tests with the real `video-worker`; `npx tsc --noEmit` exit 0; `npm run lint` exit 0 (0 errors; 23 pre-existing warnings in Phase 02 auth specs); `npm run build` exit 0.
+- **Issues surfaced only by the full suite (fixed before closing the phase):**
+  - `videos.service.integration-spec.ts` called `job.remove()` on a job the running `video-worker` had already locked ("locked by another worker"); the cleanup was dropped — the worker owns the job.
+  - `migrations.integration-spec.ts` dropped FK-linked tables with parallel `DROP TABLE … CASCADE` (`Promise.all`), which deadlocked once `videos` joined the FK graph and left a half-dropped schema that cascaded into ~10 suites; now one atomic `DROP TABLE a, b, … CASCADE` (and one `DROP TYPE`).
+  - BullMQ `Queue`/`Worker` had no `error` listener, so a Redis "Connection is closed" became an unhandled EventEmitter error (in production it would crash the API process / stall the worker; in the suite it failed whichever file ran next). Added the listeners recommended by BullMQ's "Going to production" guide (`VideoProcessingProducer` constructor; `@OnWorkerEvent('error')` in the processor) plus regression tests against the real `Queue`.

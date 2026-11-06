@@ -129,6 +129,16 @@ export class VideoProcessingProcessor extends WorkerHost {
     }
   }
 
+  /**
+   * Redis connection errors of the worker. Without this listener BullMQ's
+   * `error` event is unhandled and the worker may stop processing jobs
+   * ("Going to production" guide). Background handler: log only.
+   */
+  @OnWorkerEvent('error')
+  onError(error: Error): void {
+    this.logger.error(`Worker error: ${error.message}`);
+  }
+
   private async probeOrFailPermanently(filePath: string): Promise<ProbeResult> {
     try {
       return await this.mediaProbe.probe(filePath);

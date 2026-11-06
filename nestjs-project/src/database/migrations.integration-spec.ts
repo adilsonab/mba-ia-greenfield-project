@@ -40,17 +40,19 @@ describe('Database migrations (integration)', () => {
 
     await dataSource.initialize();
 
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
-
-    await Promise.all(
-      MANAGED_TYPES.map((type) =>
-        dataSource.query(`DROP TYPE IF EXISTS "public"."${type}"`),
-      ),
+    // One statement each, never in parallel: concurrent `DROP TABLE … CASCADE`
+    // on FK-linked tables (users ← channels ← videos) lock them in different
+    // orders across pool connections and Postgres aborts one with
+    // "deadlock detected", leaving a half-dropped schema behind.
+    await dataSource.query(
+      `DROP TABLE IF EXISTS ${[...MANAGED_TABLES, 'migrations']
+        .map((table) => `"${table}"`)
+        .join(', ')} CASCADE`,
+    );
+    await dataSource.query(
+      `DROP TYPE IF EXISTS ${MANAGED_TYPES.map(
+        (type) => `"public"."${type}"`,
+      ).join(', ')}`,
     );
   });
 

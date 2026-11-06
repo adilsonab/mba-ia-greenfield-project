@@ -1,5 +1,6 @@
 import { readdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Job, UnrecoverableError } from 'bullmq';
@@ -204,6 +205,21 @@ describe('VideoProcessingProcessor', () => {
       await expect(
         processor.onFailed(job({ attemptsMade: 3 }), new Error('timeout')),
       ).resolves.toBeUndefined();
+    });
+  });
+  describe('onError', () => {
+    it('should log worker connection errors without throwing', () => {
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      expect(() =>
+        processor.onError(new Error('Connection is closed.')),
+      ).not.toThrow();
+      expect(logged).toHaveBeenCalledWith(
+        'Worker error: Connection is closed.',
+      );
+      logged.mockRestore();
     });
   });
 });

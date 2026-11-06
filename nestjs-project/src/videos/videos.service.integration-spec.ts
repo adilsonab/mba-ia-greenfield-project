@@ -213,7 +213,9 @@ describe('VideosService (integration — real Postgres + MinIO)', () => {
       expect(job!.name).toBe(VIDEO_PROCESS_JOB);
       expect(job!.data).toEqual({ videoId: video.id });
       expect(job!.opts.attempts).toBe(3);
-      await job!.remove();
+      // No job.remove() here: a running video-worker may hold the job's lock
+      // ("locked by another worker"). It owns the job and fails it (non-media
+      // bytes); jobId = videoId is unique per run, so the leftover is harmless.
     });
 
     it('should delete the object and mark the video failed when the stored size differs from the declared one', async () => {
