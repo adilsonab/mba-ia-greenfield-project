@@ -10,9 +10,9 @@ More info in the project overview: [docs/project-plan.md](docs/project-plan.md)
 
 This is a monorepo with two main areas:
 
-- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Contains modules for users, channels, videos, comments, etc.
+- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express) and video worker. Contains modules for auth, users, channels, mail, videos, storage, media and video-processing.
 - `docs/` — Project documentation, architecture diagrams, and planning.
-- `next-frontend/` (Next.js) — not yet initialized
+- `next-frontend/` — Frontend (Next.js 16, App Router, BFF route handlers); see `next-frontend/CLAUDE.md`
 
 ## Architecture (C4 Container Diagram)
 
@@ -23,8 +23,24 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 - **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
 - **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Message Queue** (BullMQ + Redis) → video processing job queue
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+## Videos
+
+Delivered in Phase 03 (`docs/phases/phase-03-videos/`). Details on running and testing it live in `nestjs-project/CLAUDE.md` → "Videos pipeline".
+
+- **Module:** `nestjs-project/src/videos/` — every endpoint is authenticated and owner-only (another user's video answers `404 VIDEO_NOT_FOUND`):
+  - `POST /videos` — creates the draft in the caller's channel and returns presigned multipart `UploadPart` URLs
+  - `GET /videos/:publicId/upload` — resumes: lists stored parts and re-signs only the missing ones
+  - `POST /videos/:publicId/upload/complete` — completes the multipart, checks the stored size and enqueues processing (`202`)
+  - `GET /videos/:publicId` — detail with both statuses, extracted metadata and the thumbnail URL
+  - `GET /videos/:publicId/stream` — presigned GET for playback (storage answers `Range` with `206`)
+  - `GET /videos/:publicId/download` — presigned GET with `Content-Disposition: attachment; filename="<original name>"`
+- **Two status axes:** `status` (publication — `draft` in this phase) and `processing_status` (`awaiting_upload → processing → ready | failed`); stream/download answer `409 VIDEO_NOT_READY` until `ready`
+- **No video bytes through the API:** files (up to 10 GiB) go from the client straight to the object storage via presigned URLs
+- **Object storage:** S3-compatible (MinIO in Compose, service `storage`), one bucket with per-video keys `videos/<videoId>/original` and `videos/<videoId>/thumbnail.jpg`
+- **Queue + worker:** BullMQ queue `video-processing` on Redis (service `redis`), job `video.process` `{ videoId }`; the `video-worker` service (same codebase, entrypoint `src/worker.ts`) runs ffprobe/FFmpeg to extract metadata and the thumbnail and updates the DB
 
 ## Docker Networking
 

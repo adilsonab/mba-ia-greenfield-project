@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 13/14 completed
+**SIs:** 14/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -126,6 +126,8 @@
   - Pré-condição do `video-worker` rodando documentada no topo do spec; levar ao CLAUDE.md na SI-03.14.
 
 ### SI-03.14 — Documentação: CLAUDE.md, OpenAPI, diagrama de arquitetura e README
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests (documentation only); `openapi.json` regenerated with the 6 `/videos` paths; every path, script, service and log line cited was checked against the repo and the running containers
+- **Observations:**
+  - Root `CLAUDE.md`: besides the Videos section and the queue "TBD" → "BullMQ + Redis", fixed two stale lines in "Repository Structure" (`next-frontend` "not yet initialized" and a non-existent `comments` module), since an inconsistent CLAUDE.md is an automatic-fail criterion.
+  - `nestjs-project/CLAUDE.md`: readiness checks quote the real outputs (`The cluster 'local' is ready`, `PONG`, worker start log); documented the `storage.localhost` exception, the curl RFC 6761 caveat, the Windows `--watch` limitation and the worker precondition for e2e; also listed `mailpit`, already in Compose but missing from the services list.
