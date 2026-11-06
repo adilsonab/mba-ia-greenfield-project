@@ -9,6 +9,7 @@ import {
   UploadIncompleteException,
   UploadSizeMismatchException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoUploadNotInProgressException,
 } from '../common/exceptions/domain.exception';
 import videosConfig from '../config/videos.config';
@@ -22,6 +23,7 @@ import { VideoProcessingProducer } from '../video-processing/video-processing.pr
 import type { CompleteUploadDto } from './dto/complete-upload.dto';
 import type { CompleteUploadResponseDto } from './dto/complete-upload-response.dto';
 import type { ResumeUploadResponseDto } from './dto/resume-upload-response.dto';
+import type { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 import type { StartUploadDto } from './dto/start-upload.dto';
 import {
   toVideoDetailResponse,
@@ -293,6 +295,34 @@ export class VideosService {
       ? (await this.storageService.presignGetObject(video.thumbnail_key)).url
       : null;
     return toVideoDetailResponse(video, thumbnailUrl);
+  }
+
+  /**
+   * Short-lived URL the player loads directly from the storage, which serves
+   * Range requests with 206 — no video bytes through the API
+   * (phase-03-videos/TD-14, TD-15).
+   */
+  async getStreamUrl(
+    userId: string,
+    publicId: string,
+  ): Promise<SignedUrlResponseDto> {
+    const video = await this.findOwnedReadyVideo(userId, publicId);
+    const signed = await this.storageService.presignGetObject(
+      video.storage_key,
+    );
+    return { url: signed.url, expires_at: signed.expiresAt.toISOString() };
+  }
+
+  /** Stream/download are only available once processing finished (TD-15). */
+  private async findOwnedReadyVideo(
+    userId: string,
+    publicId: string,
+  ): Promise<Video> {
+    const video = await this.findOwnedByPublicId(userId, publicId);
+    if (video.processing_status !== VideoProcessingStatus.READY) {
+      throw new VideoNotReadyException();
+    }
+    return video;
   }
 
   /** Only `awaiting_upload` videos have an open multipart upload. */

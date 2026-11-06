@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/14 completed
+**SIs:** 11/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -103,9 +103,12 @@
   - Unit fixture built with `Object.assign(new Video(), …)` instead of an `as Video` cast that `tsc` rejected (missing `channel` relation).
 
 ### SI-03.11 — Endpoint GET /videos/:publicId/stream (reprodução via streaming)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 35 passing — Set A 31 (`videos.service.spec.ts`, cumulative) + Set B 4 (`test/videos-stream.e2e-spec.ts`, from `specs/videos-stream.plan.md`: URL on `storage.localhost:9000` expiring in ~1h, `Range: bytes=0-1023` → 206 with the exact bytes and `Content-Range`); `tsc --noEmit` exit 0
+- **Observations:**
+  - Shared response DTO named `src/videos/dto/signed-url-response.dto.ts` (plan: `signed-url.response.ts`), following the `*.dto.ts` rule — reused by SI-03.12.
+  - `findOwnedReadyVideo` centralizes the "owner + `ready`" guard for stream and download (`VIDEO_NOT_READY` otherwise).
+  - e2e setup completes the multipart through `StorageService` instead of `POST …/upload/complete`: the endpoint would enqueue a `video.process` job that the running `video-worker` processes (random bytes → `failed`), racing the test's direct `ready` update. Same rule applies to SI-03.12's spec.
 
 ### SI-03.12 — Endpoint GET /videos/:publicId/download (download do vídeo)
 - **Status:** pending

@@ -7,6 +7,7 @@ import {
   UploadIncompleteException,
   UploadSizeMismatchException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoUploadNotInProgressException,
 } from '../common/exceptions/domain.exception';
 import videosConfig from '../config/videos.config';
@@ -475,6 +476,50 @@ describe('VideosService', () => {
     it('should delegate ownership to findOwnedByPublicId (404 for other users)', async () => {
       await expect(
         service.getDetail('user-2', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+    });
+  });
+
+  describe('getStreamUrl', () => {
+    it('should presign the original for a ready video and return url + expires_at', async () => {
+      const expiresAt = new Date('2026-11-06T11:00:00Z');
+      repo.findOne.mockResolvedValueOnce(
+        storedVideo({ processing_status: VideoProcessingStatus.READY }),
+      );
+      storage.presignGetObject.mockResolvedValueOnce({
+        url: 'https://s/stream',
+        expiresAt,
+      });
+
+      const result = await service.getStreamUrl('user-1', 'pubVideo001');
+
+      expect(storage.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/original',
+      );
+      expect(result).toEqual({
+        url: 'https://s/stream',
+        expires_at: '2026-11-06T11:00:00.000Z',
+      });
+    });
+
+    it.each([
+      VideoProcessingStatus.AWAITING_UPLOAD,
+      VideoProcessingStatus.PROCESSING,
+      VideoProcessingStatus.FAILED,
+    ])('should raise VIDEO_NOT_READY while the video is %s', async (status) => {
+      repo.findOne.mockResolvedValueOnce(
+        storedVideo({ processing_status: status }),
+      );
+
+      await expect(
+        service.getStreamUrl('user-1', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(VideoNotReadyException);
+      expect(storage.presignGetObject).not.toHaveBeenCalled();
+    });
+
+    it('should not disclose videos of other users', async () => {
+      await expect(
+        service.getStreamUrl('user-2', 'pubVideo001'),
       ).rejects.toBeInstanceOf(VideoNotFoundException);
     });
   });

@@ -21,6 +21,7 @@ import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { CompleteUploadResponseDto } from './dto/complete-upload-response.dto';
 import { ResumeUploadResponseDto } from './dto/resume-upload-response.dto';
+import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 import { StartUploadDto } from './dto/start-upload.dto';
 import { VideoDetailResponseDto } from './dto/video-detail-response.dto';
 import { StartUploadResponseDto } from './dto/start-upload-response.dto';
@@ -180,5 +181,39 @@ export class VideosController {
     @Param('publicId') publicId: string,
   ): Promise<VideoDetailResponseDto> {
     return this.videosService.getDetail(user.sub, publicId);
+  }
+
+  @Get(':publicId/stream')
+  @ApiOperation({
+    summary: 'Get a streaming URL',
+    description:
+      'Returns a short-lived presigned URL the player loads directly from object storage. The storage answers Range requests with 206 Partial Content, so playback starts without downloading the whole file.',
+  })
+  @ApiParam({ name: 'publicId', description: 'Video public id (11 chars)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Presigned streaming URL',
+    type: SignedUrlResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found (or not owned by the caller)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getStreamUrl(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<SignedUrlResponseDto> {
+    return this.videosService.getStreamUrl(user.sub, publicId);
   }
 }
