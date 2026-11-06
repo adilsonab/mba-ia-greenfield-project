@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/14 completed
+**SIs:** 6/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -42,9 +42,16 @@
   - Out of scope: `pg` warns "client.query() when the client is already executing a query" from the pre-existing concurrent `Promise.all` DROPs in the migrations test `beforeAll`.
 
 ### SI-03.5 — Endpoint POST /videos (pré-cadastro do rascunho e plano de upload)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 22 passing — Set A 16 (`public-id.util.spec.ts`, `videos.service.spec.ts`, `videos.service.integration-spec.ts`, `videos.module.spec.ts`) + Set B 6 (`test/videos-start-upload.e2e-spec.ts`, generated from `specs/videos-start-upload.plan.md`); `tsc --noEmit` exit 0
+- **Observations:**
+  - Request DTO follows `.claude/rules/nestjs-dtos.md`: no `@ApiProperty` (the Swagger CLI plugin infers it from `class-validator`; JSDoc carries descriptions). Response DTOs (`start-upload-response.dto.ts`) carry explicit `@ApiProperty`.
+  - The 10 GiB cap on `size_bytes` is the constant `VIDEO_MAX_SIZE_BYTES` in `videos.constants.ts`: decorators are evaluated at import time, before `ConfigModule` loads `.env`, so the `VIDEO_MAX_SIZE_BYTES` env key from SI-03.1 is not consumed by the DTO. Follow-up: drop or wire that env key in a later cleanup.
+  - The draft `id` is generated in the app (`randomUUID`) so `storage_key` is known before the insert; the `public_id` retry loop runs outside a transaction (single INSERT), avoiding the aborted-transaction pitfall of `typeorm-queries.md`.
+  - Compensation: if the storage fails after the insert, the draft row is deleted — covered by unit and integration (`jest.spyOn`) tests per `nestjs-testing.md`.
+  - Added `ChannelsService.findByUserId` (channel lookup stays in the channels module) and a `StorageService.presignExpiresSeconds` getter (single source for URL lifetime).
+  - Created shared e2e helpers `test/helpers/app.helper.ts` (`createTestApp` mirroring `main.ts`, `clearThrottler`) and `test/helpers/auth.helper.ts` (`createAuthenticatedUser` — register + DB confirmation + login). The plan scheduled `auth.helper.ts` for SI-03.13; it was needed now by the first spec-derived e2e and SI-03.13 will reuse it.
+  - The e2e boots the full `AppModule`, so the dev bucket `streamtube` now exists; abandoned multipart uploads from e2e runs are reclaimed by MinIO's incomplete-upload expiry.
 
 ### SI-03.6 — Endpoint GET /videos/:publicId/upload (retomada do upload)
 - **Status:** pending

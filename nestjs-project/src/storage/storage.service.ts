@@ -82,6 +82,11 @@ export class StorageService implements OnModuleInit {
     await this.ensureBucket();
   }
 
+  /** Default lifetime of presigned URLs (`S3_PRESIGN_EXPIRES_SECONDS`). */
+  get presignExpiresSeconds(): number {
+    return this.config.presignExpiresSeconds;
+  }
+
   async ensureBucket(): Promise<void> {
     try {
       await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
