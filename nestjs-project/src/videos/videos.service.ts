@@ -23,6 +23,10 @@ import type { CompleteUploadDto } from './dto/complete-upload.dto';
 import type { CompleteUploadResponseDto } from './dto/complete-upload-response.dto';
 import type { ResumeUploadResponseDto } from './dto/resume-upload-response.dto';
 import type { StartUploadDto } from './dto/start-upload.dto';
+import {
+  toVideoDetailResponse,
+  type VideoDetailResponseDto,
+} from './dto/video-detail-response.dto';
 import type { StartUploadResponseDto } from './dto/start-upload-response.dto';
 import {
   Video,
@@ -274,6 +278,21 @@ export class VideosService {
       return false;
     }
     return partNumbersUpTo(partCount).every((n) => numbers.has(n));
+  }
+
+  /**
+   * Owner-facing detail: status lifecycle, extracted metadata and a presigned
+   * thumbnail URL when one exists (phase-03-videos/TD-11, TD-14).
+   */
+  async getDetail(
+    userId: string,
+    publicId: string,
+  ): Promise<VideoDetailResponseDto> {
+    const video = await this.findOwnedByPublicId(userId, publicId);
+    const thumbnailUrl = video.thumbnail_key
+      ? (await this.storageService.presignGetObject(video.thumbnail_key)).url
+      : null;
+    return toVideoDetailResponse(video, thumbnailUrl);
   }
 
   /** Only `awaiting_upload` videos have an open multipart upload. */

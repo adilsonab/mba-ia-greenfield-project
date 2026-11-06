@@ -51,6 +51,7 @@ describe('VideosService', () => {
     completeMultipartUpload: jest.Mock;
     headObject: jest.Mock;
     deleteObject: jest.Mock;
+    presignGetObject: jest.Mock;
     presignExpiresSeconds: number;
   };
 
@@ -65,6 +66,9 @@ describe('VideosService', () => {
       declared_size_bytes: 2 * PART_SIZE,
       storage_key: 'videos/video-1/original',
       upload_id: 'upload-1',
+      thumbnail_key: null,
+      created_at: new Date('2026-11-06T10:00:00Z'),
+      updated_at: new Date('2026-11-06T10:00:00Z'),
       ...overrides,
     }) as Video;
 
@@ -104,6 +108,10 @@ describe('VideosService', () => {
         contentType: 'video/mp4',
       }),
       deleteObject: jest.fn().mockResolvedValue(undefined),
+      presignGetObject: jest.fn().mockResolvedValue({
+        url: 'https://s/thumb',
+        expiresAt: new Date(),
+      }),
       presignExpiresSeconds: 3600,
     };
 
@@ -434,6 +442,40 @@ describe('VideosService', () => {
       await expect(
         service.completeUpload('user-1', 'pubVideo001', allParts),
       ).rejects.toBeInstanceOf(VideoUploadNotInProgressException);
+    });
+  });
+
+  describe('getDetail', () => {
+    it('should sign the thumbnail only when the video has one', async () => {
+      const result = await service.getDetail('user-1', 'pubVideo001');
+
+      expect(storage.presignGetObject).not.toHaveBeenCalled();
+      expect(result.thumbnail_url).toBeNull();
+    });
+
+    it('should return a presigned thumbnail URL for a processed video', async () => {
+      repo.findOne.mockResolvedValueOnce(
+        storedVideo({
+          processing_status: VideoProcessingStatus.READY,
+          thumbnail_key: 'videos/video-1/thumbnail.jpg',
+          created_at: new Date(),
+          updated_at: new Date(),
+        }),
+      );
+
+      const result = await service.getDetail('user-1', 'pubVideo001');
+
+      expect(storage.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/thumbnail.jpg',
+      );
+      expect(result.thumbnail_url).toBe('https://s/thumb');
+      expect(result.processing_status).toBe(VideoProcessingStatus.READY);
+    });
+
+    it('should delegate ownership to findOwnedByPublicId (404 for other users)', async () => {
+      await expect(
+        service.getDetail('user-2', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
     });
   });
 });

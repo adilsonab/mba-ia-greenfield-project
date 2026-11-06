@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/14 completed
+**SIs:** 10/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -95,9 +95,12 @@
   - On its first start the worker drained the 2 `video.process` jobs left by SI-03.7 e2e runs as no-ops (videos already deleted) — `wait=0`, `failed=0`.
 
 ### SI-03.10 — Endpoint GET /videos/:publicId (detalhe, status e metadados)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 33 passing — Set A 29 (`video-detail-response.dto.spec.ts` 3, `videos.service.spec.ts` 26 cumulative) + Set B 4 (`test/videos-detail.e2e-spec.ts`, from `specs/videos-detail.plan.md`); `tsc --noEmit` exit 0
+- **Observations:**
+  - File named `src/videos/dto/video-detail-response.dto.ts` (and its `.spec.ts`) instead of the plan's `video-detail.response.ts`, following the `*.dto.ts` naming of `.claude/rules/nestjs-dtos.md` and the other response DTOs of this phase.
+  - `toVideoDetailResponse` builds the response field by field, so internal columns can never leak by accident; covered by unit and e2e assertions.
+  - Unit fixture built with `Object.assign(new Video(), …)` instead of an `as Video` cast that `tsc` rejected (missing `channel` relation).
 
 ### SI-03.11 — Endpoint GET /videos/:publicId/stream (reprodução via streaming)
 - **Status:** pending

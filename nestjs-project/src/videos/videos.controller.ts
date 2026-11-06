@@ -22,6 +22,7 @@ import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { CompleteUploadResponseDto } from './dto/complete-upload-response.dto';
 import { ResumeUploadResponseDto } from './dto/resume-upload-response.dto';
 import { StartUploadDto } from './dto/start-upload.dto';
+import { VideoDetailResponseDto } from './dto/video-detail-response.dto';
 import { StartUploadResponseDto } from './dto/start-upload-response.dto';
 import { VideosService } from './videos.service';
 
@@ -150,5 +151,34 @@ export class VideosController {
     @Body() dto: CompleteUploadDto,
   ): Promise<CompleteUploadResponseDto> {
     return this.videosService.completeUpload(user.sub, publicId, dto);
+  }
+
+  @Get(':publicId')
+  @ApiOperation({
+    summary: 'Get a video',
+    description:
+      "Returns the owner's view of a video: publication and processing status, processing error, extracted metadata and a short-lived thumbnail URL once the thumbnail exists.",
+  })
+  @ApiParam({ name: 'publicId', description: 'Video public id (11 chars)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Video detail',
+    type: VideoDetailResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found (or not owned by the caller)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getDetail(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<VideoDetailResponseDto> {
+    return this.videosService.getDetail(user.sub, publicId);
   }
 }
