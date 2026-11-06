@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/14 completed
+**SIs:** 8/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -62,9 +62,15 @@
   - The integration and e2e resume tests upload a real 64 MiB part (default part size) from inside the container — no config override needed.
 
 ### SI-03.7 — Endpoint POST /videos/:publicId/upload/complete (conclusão e enfileiramento)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 30 passing Set A (`videos.service.spec.ts` 23, `videos.service.integration-spec.ts` 5, `video-processing-queue.module.spec.ts` 1, `videos.module.spec.ts` 1 — cumulative) + 6 Set B (`test/videos-upload-complete.e2e-spec.ts`, from `specs/videos-upload-complete.plan.md`); regression: start-upload and resume e2e (11) still green; `tsc --noEmit` exit 0
+- **Observations:**
+  - The root Redis connection lives in `queueRootModule()` (`src/video-processing/queue-root.module.ts`) so `AppModule`, the future `WorkerModule` and test modules register it identically; queue + producer in `VideoProcessingQueueModule` (`registerQueueAsync` reads attempts/backoff from `videosConfig`, confirmed via Context7).
+  - BullMQ (Context7): a duplicate `jobId` is ignored only while the job exists; with `removeOnComplete: true` a re-enqueue after completion would be accepted — harmless here because completion is guarded by `awaiting_upload`.
+  - `parts` must list each plan part number exactly once — duplicates and out-of-plan numbers are `UPLOAD_INCOMPLETE` before any storage call.
+  - Integration test uploads non-media bytes on purpose: once a `video-worker` runs, the job fails as `UnrecoverableError` and stays in Redis (`removeOnFail: false`), so the `queue.getJob(videoId)` assertion stays stable with or without a worker.
+  - Test modules importing `VideosModule` (`videos.module.spec.ts`, `videos.service.integration-spec.ts`) now include `queueConfig` + `queueRootModule()` (per `.claude/rules/nestjs-modules.md`); the unit spec mocks `VideoProcessingProducer`.
+  - e2e runs leave `video.process` jobs waiting in Redis for videos that `cleanAllTables` later deletes; the SI-03.9 processor must finish such jobs as no-ops (step 1 of `### Events/Messages`).
 
 ### SI-03.8 — MediaModule: extração de metadados (ffprobe) e thumbnail (ffmpeg)
 - **Status:** completed

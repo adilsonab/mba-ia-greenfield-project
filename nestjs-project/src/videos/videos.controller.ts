@@ -18,6 +18,8 @@ import {
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
+import { CompleteUploadResponseDto } from './dto/complete-upload-response.dto';
 import { ResumeUploadResponseDto } from './dto/resume-upload-response.dto';
 import { StartUploadDto } from './dto/start-upload.dto';
 import { StartUploadResponseDto } from './dto/start-upload-response.dto';
@@ -95,5 +97,58 @@ export class VideosController {
     @Param('publicId') publicId: string,
   ): Promise<ResumeUploadResponseDto> {
     return this.videosService.resumeUpload(user.sub, publicId);
+  }
+
+  @Post(':publicId/upload/complete')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Complete a video upload',
+    description:
+      'Completes the multipart upload with the ETag of every part, verifies the stored size against the declared one and enqueues the `video.process` job. Processing then happens asynchronously in the video worker.',
+  })
+  @ApiParam({ name: 'publicId', description: 'Video public id (11 chars)' })
+  @ApiResponse({
+    status: 202,
+    description: 'Upload completed; processing enqueued',
+    type: CompleteUploadResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation failed, or parts missing / rejected by the storage (UPLOAD_INCOMPLETE)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found (or not owned by the caller)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video upload is not in progress',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 410,
+    description: 'The storage no longer has the multipart upload',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Stored size differs from the declared size; the object is deleted and the video marked failed',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+    @Body() dto: CompleteUploadDto,
+  ): Promise<CompleteUploadResponseDto> {
+    return this.videosService.completeUpload(user.sub, publicId, dto);
   }
 }

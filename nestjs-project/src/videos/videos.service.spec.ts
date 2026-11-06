@@ -4,12 +4,18 @@ import { QueryFailedError } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import {
   UploadExpiredException,
+  UploadIncompleteException,
+  UploadSizeMismatchException,
   VideoNotFoundException,
   VideoUploadNotInProgressException,
 } from '../common/exceptions/domain.exception';
 import videosConfig from '../config/videos.config';
-import { StorageUploadNotFoundError } from '../storage/storage.errors';
+import {
+  StorageInvalidPartError,
+  StorageUploadNotFoundError,
+} from '../storage/storage.errors';
 import { StorageService } from '../storage/storage.service';
+import { VideoProcessingProducer } from '../video-processing/video-processing.producer';
 import type { StartUploadDto } from './dto/start-upload.dto';
 import {
   Video,
@@ -37,10 +43,14 @@ describe('VideosService', () => {
     findOne: jest.Mock;
   };
   let channels: { findByUserId: jest.Mock };
+  let producer: { enqueue: jest.Mock };
   let storage: {
     createMultipartUpload: jest.Mock;
     presignUploadParts: jest.Mock;
     listParts: jest.Mock;
+    completeMultipartUpload: jest.Mock;
+    headObject: jest.Mock;
+    deleteObject: jest.Mock;
     presignExpiresSeconds: number;
   };
 
@@ -75,6 +85,7 @@ describe('VideosService', () => {
       delete: jest.fn().mockResolvedValue(undefined),
       findOne: jest.fn().mockResolvedValue(storedVideo()),
     };
+    producer = { enqueue: jest.fn().mockResolvedValue(undefined) };
     channels = {
       findByUserId: jest.fn().mockResolvedValue({ id: 'channel-1' }),
     };
@@ -87,6 +98,12 @@ describe('VideosService', () => {
           ),
       ),
       listParts: jest.fn().mockResolvedValue([]),
+      completeMultipartUpload: jest.fn().mockResolvedValue(undefined),
+      headObject: jest.fn().mockResolvedValue({
+        contentLength: 2 * PART_SIZE,
+        contentType: 'video/mp4',
+      }),
+      deleteObject: jest.fn().mockResolvedValue(undefined),
       presignExpiresSeconds: 3600,
     };
 
@@ -96,6 +113,7 @@ describe('VideosService', () => {
         { provide: getRepositoryToken(Video), useValue: repo },
         { provide: ChannelsService, useValue: channels },
         { provide: StorageService, useValue: storage },
+        { provide: VideoProcessingProducer, useValue: producer },
         {
           provide: videosConfig.KEY,
           useValue: { uploadPartSizeBytes: PART_SIZE },
@@ -291,6 +309,131 @@ describe('VideosService', () => {
         service.resumeUpload('user-2', 'pubVideo001'),
       ).rejects.toBeInstanceOf(VideoNotFoundException);
       expect(storage.listParts).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('completeUpload', () => {
+    const allParts = {
+      parts: [
+        { part_number: 2, etag: '"etag-2"' },
+        { part_number: 1, etag: '"etag-1"' },
+      ],
+    };
+
+    it('should complete, verify, enqueue and only then move the video to processing', async () => {
+      const result = await service.completeUpload(
+        'user-1',
+        'pubVideo001',
+        allParts,
+      );
+
+      expect(storage.completeMultipartUpload).toHaveBeenCalledWith(
+        'videos/video-1/original',
+        'upload-1',
+        [
+          { partNumber: 2, etag: '"etag-2"' },
+          { partNumber: 1, etag: '"etag-1"' },
+        ],
+      );
+      expect(storage.headObject).toHaveBeenCalledWith(
+        'videos/video-1/original',
+      );
+      expect(producer.enqueue).toHaveBeenCalledWith('video-1');
+      expect(repo.update).toHaveBeenCalledWith('video-1', {
+        size_bytes: 2 * PART_SIZE,
+        upload_id: null,
+        processing_status: VideoProcessingStatus.PROCESSING,
+      });
+      const enqueueOrder = producer.enqueue.mock.invocationCallOrder[0];
+      const updateOrder = repo.update.mock.invocationCallOrder[0];
+      expect(enqueueOrder).toBeLessThan(updateOrder);
+      expect(result).toEqual({
+        public_id: 'pubVideo001',
+        processing_status: VideoProcessingStatus.PROCESSING,
+      });
+    });
+
+    it('should raise UPLOAD_INCOMPLETE without calling the storage when a part of the plan is missing', async () => {
+      await expect(
+        service.completeUpload('user-1', 'pubVideo001', {
+          parts: [{ part_number: 1, etag: '"etag-1"' }],
+        }),
+      ).rejects.toBeInstanceOf(UploadIncompleteException);
+      expect(storage.completeMultipartUpload).not.toHaveBeenCalled();
+    });
+
+    it('should raise UPLOAD_INCOMPLETE for duplicated or out-of-plan part numbers', async () => {
+      await expect(
+        service.completeUpload('user-1', 'pubVideo001', {
+          parts: [
+            { part_number: 1, etag: '"a"' },
+            { part_number: 1, etag: '"b"' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(UploadIncompleteException);
+      await expect(
+        service.completeUpload('user-1', 'pubVideo001', {
+          parts: [
+            { part_number: 1, etag: '"a"' },
+            { part_number: 3, etag: '"b"' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(UploadIncompleteException);
+    });
+
+    it('should map a part/ETag rejected by the storage to UPLOAD_INCOMPLETE', async () => {
+      storage.completeMultipartUpload.mockRejectedValueOnce(
+        new StorageInvalidPartError('InvalidPart'),
+      );
+
+      await expect(
+        service.completeUpload('user-1', 'pubVideo001', allParts),
+      ).rejects.toBeInstanceOf(UploadIncompleteException);
+      expect(producer.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('should map a vanished multipart upload to UPLOAD_EXPIRED', async () => {
+      storage.completeMultipartUpload.mockRejectedValueOnce(
+        new StorageUploadNotFoundError('upload-1'),
+      );
+
+      await expect(
+        service.completeUpload('user-1', 'pubVideo001', allParts),
+      ).rejects.toBeInstanceOf(UploadExpiredException);
+    });
+
+    it('should delete the object, mark the video failed and raise UPLOAD_SIZE_MISMATCH when sizes differ', async () => {
+      storage.headObject.mockResolvedValueOnce({
+        contentLength: 2 * PART_SIZE - 1,
+        contentType: 'video/mp4',
+      });
+
+      await expect(
+        service.completeUpload('user-1', 'pubVideo001', allParts),
+      ).rejects.toBeInstanceOf(UploadSizeMismatchException);
+
+      expect(storage.deleteObject).toHaveBeenCalledWith(
+        'videos/video-1/original',
+      );
+      expect(repo.update).toHaveBeenCalledWith(
+        'video-1',
+        expect.objectContaining({
+          upload_id: null,
+          processing_status: VideoProcessingStatus.FAILED,
+          processing_error: expect.stringContaining('does not match') as string,
+        }),
+      );
+      expect(producer.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('should raise VIDEO_UPLOAD_NOT_IN_PROGRESS when completing twice', async () => {
+      repo.findOne.mockResolvedValueOnce(
+        storedVideo({ processing_status: VideoProcessingStatus.PROCESSING }),
+      );
+
+      await expect(
+        service.completeUpload('user-1', 'pubVideo001', allParts),
+      ).rejects.toBeInstanceOf(VideoUploadNotInProgressException);
     });
   });
 });

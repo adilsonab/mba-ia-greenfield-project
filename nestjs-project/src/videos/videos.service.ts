@@ -6,13 +6,21 @@ import { QueryFailedError, Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import {
   UploadExpiredException,
+  UploadIncompleteException,
+  UploadSizeMismatchException,
   VideoNotFoundException,
   VideoUploadNotInProgressException,
 } from '../common/exceptions/domain.exception';
 import videosConfig from '../config/videos.config';
 import { videoOriginalKey } from '../storage/storage.constants';
-import { StorageUploadNotFoundError } from '../storage/storage.errors';
+import {
+  StorageInvalidPartError,
+  StorageUploadNotFoundError,
+} from '../storage/storage.errors';
 import { StorageService } from '../storage/storage.service';
+import { VideoProcessingProducer } from '../video-processing/video-processing.producer';
+import type { CompleteUploadDto } from './dto/complete-upload.dto';
+import type { CompleteUploadResponseDto } from './dto/complete-upload-response.dto';
 import type { ResumeUploadResponseDto } from './dto/resume-upload-response.dto';
 import type { StartUploadDto } from './dto/start-upload.dto';
 import type { StartUploadResponseDto } from './dto/start-upload-response.dto';
@@ -53,6 +61,7 @@ export class VideosService {
     private readonly videoRepository: Repository<Video>,
     private readonly channelsService: ChannelsService,
     private readonly storageService: StorageService,
+    private readonly processingProducer: VideoProcessingProducer,
     @Inject(videosConfig.KEY)
     private readonly config: ConfigType<typeof videosConfig>,
   ) {}
@@ -189,6 +198,82 @@ export class VideosService {
       })),
       parts: parts.map((p) => ({ part_number: p.partNumber, url: p.url })),
     };
+  }
+
+  /**
+   * Completes the multipart upload, verifies the stored object and enqueues
+   * processing (phase-03-videos/TD-09, TD-10). Order: complete → HeadObject →
+   * enqueue → status write; the worker also sets `processing` when it starts,
+   * so a crash between enqueue and the write self-heals.
+   */
+  async completeUpload(
+    userId: string,
+    publicId: string,
+    dto: CompleteUploadDto,
+  ): Promise<CompleteUploadResponseDto> {
+    const video = await this.findOwnedByPublicId(userId, publicId);
+    const uploadId = this.requireUploadInProgress(video);
+
+    const partCount = Math.ceil(
+      video.declared_size_bytes / this.config.uploadPartSizeBytes,
+    );
+    if (!this.coversWholePlan(dto, partCount)) {
+      throw new UploadIncompleteException();
+    }
+
+    try {
+      await this.storageService.completeMultipartUpload(
+        video.storage_key,
+        uploadId,
+        dto.parts.map((p) => ({ partNumber: p.part_number, etag: p.etag })),
+      );
+    } catch (error) {
+      if (error instanceof StorageInvalidPartError) {
+        throw new UploadIncompleteException();
+      }
+      if (error instanceof StorageUploadNotFoundError) {
+        throw new UploadExpiredException();
+      }
+      throw error;
+    }
+
+    const stored = await this.storageService.headObject(video.storage_key);
+    if (!stored) {
+      throw new Error(
+        `Object ${video.storage_key} missing right after completing its upload`,
+      );
+    }
+
+    if (stored.contentLength !== video.declared_size_bytes) {
+      await this.storageService.deleteObject(video.storage_key);
+      await this.videoRepository.update(video.id, {
+        upload_id: null,
+        processing_status: VideoProcessingStatus.FAILED,
+        processing_error: `Uploaded size ${stored.contentLength} bytes does not match the declared ${video.declared_size_bytes} bytes`,
+      });
+      throw new UploadSizeMismatchException();
+    }
+
+    await this.processingProducer.enqueue(video.id);
+    await this.videoRepository.update(video.id, {
+      size_bytes: stored.contentLength,
+      upload_id: null,
+      processing_status: VideoProcessingStatus.PROCESSING,
+    });
+
+    return {
+      public_id: video.public_id,
+      processing_status: VideoProcessingStatus.PROCESSING,
+    };
+  }
+
+  /** `parts` must list each part number of the plan exactly once. */
+  private coversWholePlan(dto: CompleteUploadDto, partCount: number): boolean {
+    const numbers = new Set(dto.parts.map((p) => p.part_number));
+    if (numbers.size !== dto.parts.length || numbers.size !== partCount) {
+      return false;
+    }
+    return partNumbersUpTo(partCount).every((n) => numbers.has(n));
   }
 
   /** Only `awaiting_upload` videos have an open multipart upload. */
