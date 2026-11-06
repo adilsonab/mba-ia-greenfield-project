@@ -4,9 +4,16 @@ import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
+import {
+  UploadExpiredException,
+  VideoNotFoundException,
+  VideoUploadNotInProgressException,
+} from '../common/exceptions/domain.exception';
 import videosConfig from '../config/videos.config';
 import { videoOriginalKey } from '../storage/storage.constants';
+import { StorageUploadNotFoundError } from '../storage/storage.errors';
 import { StorageService } from '../storage/storage.service';
+import type { ResumeUploadResponseDto } from './dto/resume-upload-response.dto';
 import type { StartUploadDto } from './dto/start-upload.dto';
 import type { StartUploadResponseDto } from './dto/start-upload-response.dto';
 import {
@@ -112,6 +119,88 @@ export class VideosService {
       await this.videoRepository.delete(video.id);
       throw error;
     }
+  }
+
+  /**
+   * Loads a video owned by the caller. Missing videos and videos of other
+   * users both raise VIDEO_NOT_FOUND, so a draft's existence is never
+   * disclosed (### Authorization Matrix, phase-03-videos/TD-15).
+   */
+  async findOwnedByPublicId(userId: string, publicId: string): Promise<Video> {
+    const video = await this.videoRepository.findOne({
+      where: { public_id: publicId },
+      relations: { channel: true },
+    });
+    if (!video || video.channel.user_id !== userId) {
+      throw new VideoNotFoundException();
+    }
+    return video;
+  }
+
+  /**
+   * Resume support: lists the stored parts and re-signs only the missing ones
+   * (phase-03-videos/TD-08, TD-10).
+   */
+  async resumeUpload(
+    userId: string,
+    publicId: string,
+  ): Promise<ResumeUploadResponseDto> {
+    const video = await this.findOwnedByPublicId(userId, publicId);
+    const uploadId = this.requireUploadInProgress(video);
+
+    const partSize = this.config.uploadPartSizeBytes;
+    const partCount = Math.ceil(video.declared_size_bytes / partSize);
+
+    let uploaded: Awaited<ReturnType<StorageService['listParts']>>;
+    try {
+      uploaded = await this.storageService.listParts(
+        video.storage_key,
+        uploadId,
+      );
+    } catch (error) {
+      if (error instanceof StorageUploadNotFoundError) {
+        throw new UploadExpiredException();
+      }
+      throw error;
+    }
+
+    const uploadedNumbers = new Set(uploaded.map((p) => p.partNumber));
+    const missing = partNumbersUpTo(partCount).filter(
+      (n) => !uploadedNumbers.has(n),
+    );
+    const expiresIn = this.partUrlExpiresSeconds();
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+    const parts = await this.storageService.presignUploadParts(
+      video.storage_key,
+      uploadId,
+      missing,
+      expiresIn,
+    );
+
+    return {
+      public_id: video.public_id,
+      part_size_bytes: partSize,
+      part_count: partCount,
+      expires_at: expiresAt.toISOString(),
+      uploaded_parts: uploaded.map((p) => ({
+        part_number: p.partNumber,
+        etag: p.etag,
+        size_bytes: p.sizeBytes,
+      })),
+      parts: parts.map((p) => ({ part_number: p.partNumber, url: p.url })),
+    };
+  }
+
+  /** Only `awaiting_upload` videos have an open multipart upload. */
+  private requireUploadInProgress(video: Video): string {
+    if (video.processing_status !== VideoProcessingStatus.AWAITING_UPLOAD) {
+      throw new VideoUploadNotInProgressException();
+    }
+    if (!video.upload_id) {
+      // awaiting_upload without an upload id cannot be resumed or completed.
+      throw new UploadExpiredException();
+    }
+    return video.upload_id;
   }
 
   /** Part URLs expire after the configured presign window (TD-10 default 1h). */

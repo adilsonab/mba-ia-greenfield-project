@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/14 completed
+**SIs:** 7/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -54,9 +54,12 @@
   - The e2e boots the full `AppModule`, so the dev bucket `streamtube` now exists; abandoned multipart uploads from e2e runs are reclaimed by MinIO's incomplete-upload expiry.
 
 ### SI-03.6 — Endpoint GET /videos/:publicId/upload (retomada do upload)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 24 passing — Set A 19 (`videos.service.spec.ts`, `videos.service.integration-spec.ts`, cumulative with SI-03.5) + Set B 5 (`test/videos-upload-resume.e2e-spec.ts`, generated from `specs/videos-upload-resume.plan.md`); `tsc --noEmit` exit 0
+- **Observations:**
+  - `findOwnedByPublicId` loads the video with its channel and raises `VIDEO_NOT_FOUND` for both missing videos and videos of other users (no 403, per the Authorization Matrix); reused by every later `/videos/:publicId…` endpoint.
+  - `requireUploadInProgress` also maps an `awaiting_upload` row without `upload_id` to `UPLOAD_EXPIRED` — defensive: the row is unresumable either way.
+  - The integration and e2e resume tests upload a real 64 MiB part (default part size) from inside the container — no config override needed.
 
 ### SI-03.7 — Endpoint POST /videos/:publicId/upload/complete (conclusão e enfileiramento)
 - **Status:** pending

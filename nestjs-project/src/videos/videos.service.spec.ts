@@ -2,7 +2,13 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { QueryFailedError } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
+import {
+  UploadExpiredException,
+  VideoNotFoundException,
+  VideoUploadNotInProgressException,
+} from '../common/exceptions/domain.exception';
 import videosConfig from '../config/videos.config';
+import { StorageUploadNotFoundError } from '../storage/storage.errors';
 import { StorageService } from '../storage/storage.service';
 import type { StartUploadDto } from './dto/start-upload.dto';
 import {
@@ -28,13 +34,29 @@ describe('VideosService', () => {
     save: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
+    findOne: jest.Mock;
   };
   let channels: { findByUserId: jest.Mock };
   let storage: {
     createMultipartUpload: jest.Mock;
     presignUploadParts: jest.Mock;
+    listParts: jest.Mock;
     presignExpiresSeconds: number;
   };
+
+  /** A stored video owned by `user-1`, still awaiting its 2-part upload. */
+  const storedVideo = (overrides: Partial<Video> = {}): Video =>
+    ({
+      id: 'video-1',
+      public_id: 'pubVideo001',
+      channel_id: 'channel-1',
+      channel: { id: 'channel-1', user_id: 'user-1' },
+      processing_status: VideoProcessingStatus.AWAITING_UPLOAD,
+      declared_size_bytes: 2 * PART_SIZE,
+      storage_key: 'videos/video-1/original',
+      upload_id: 'upload-1',
+      ...overrides,
+    }) as Video;
 
   const savedVideo = (call: number): Partial<Video> =>
     (repo.save.mock.calls as [Partial<Video>][])[call][0];
@@ -51,6 +73,7 @@ describe('VideosService', () => {
       save: jest.fn((video: Partial<Video>) => Promise.resolve(video)),
       update: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue(undefined),
+      findOne: jest.fn().mockResolvedValue(storedVideo()),
     };
     channels = {
       findByUserId: jest.fn().mockResolvedValue({ id: 'channel-1' }),
@@ -63,6 +86,7 @@ describe('VideosService', () => {
             partNumbers.map((n) => ({ partNumber: n, url: `https://s/${n}` })),
           ),
       ),
+      listParts: jest.fn().mockResolvedValue([]),
       presignExpiresSeconds: 3600,
     };
 
@@ -175,6 +199,98 @@ describe('VideosService', () => {
         'has no channel',
       );
       expect(repo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findOwnedByPublicId', () => {
+    it('should return the video when the caller owns its channel', async () => {
+      await expect(
+        service.findOwnedByPublicId('user-1', 'pubVideo001'),
+      ).resolves.toMatchObject({ id: 'video-1' });
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { public_id: 'pubVideo001' },
+        relations: { channel: true },
+      });
+    });
+
+    it('should raise VIDEO_NOT_FOUND when the video does not exist', async () => {
+      repo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOwnedByPublicId('user-1', 'missing0000'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+    });
+
+    it('should raise VIDEO_NOT_FOUND (not a 403) when another user owns the video', async () => {
+      await expect(
+        service.findOwnedByPublicId('user-2', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+    });
+  });
+
+  describe('resumeUpload', () => {
+    it('should list the stored parts and sign only the missing ones', async () => {
+      storage.listParts.mockResolvedValueOnce([
+        { partNumber: 1, etag: '"etag-1"', sizeBytes: PART_SIZE },
+      ]);
+
+      const result = await service.resumeUpload('user-1', 'pubVideo001');
+
+      expect(storage.listParts).toHaveBeenCalledWith(
+        'videos/video-1/original',
+        'upload-1',
+      );
+      expect(storage.presignUploadParts).toHaveBeenCalledWith(
+        'videos/video-1/original',
+        'upload-1',
+        [2],
+        3600,
+      );
+      expect(result).toMatchObject({
+        public_id: 'pubVideo001',
+        part_size_bytes: PART_SIZE,
+        part_count: 2,
+        uploaded_parts: [
+          { part_number: 1, etag: '"etag-1"', size_bytes: PART_SIZE },
+        ],
+        parts: [{ part_number: 2, url: 'https://s/2' }],
+      });
+    });
+
+    it('should raise VIDEO_UPLOAD_NOT_IN_PROGRESS when the video is past awaiting_upload', async () => {
+      repo.findOne.mockResolvedValueOnce(
+        storedVideo({ processing_status: VideoProcessingStatus.PROCESSING }),
+      );
+
+      await expect(
+        service.resumeUpload('user-1', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(VideoUploadNotInProgressException);
+      expect(storage.listParts).not.toHaveBeenCalled();
+    });
+
+    it('should raise UPLOAD_EXPIRED when the storage no longer has the multipart upload', async () => {
+      storage.listParts.mockRejectedValueOnce(
+        new StorageUploadNotFoundError('upload-1'),
+      );
+
+      await expect(
+        service.resumeUpload('user-1', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(UploadExpiredException);
+    });
+
+    it('should propagate unexpected storage errors untouched', async () => {
+      storage.listParts.mockRejectedValueOnce(new Error('connection reset'));
+
+      await expect(
+        service.resumeUpload('user-1', 'pubVideo001'),
+      ).rejects.toThrow('connection reset');
+    });
+
+    it('should not disclose videos of other users', async () => {
+      await expect(
+        service.resumeUpload('user-2', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+      expect(storage.listParts).not.toHaveBeenCalled();
     });
   });
 });

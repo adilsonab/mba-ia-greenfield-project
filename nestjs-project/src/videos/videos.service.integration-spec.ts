@@ -129,4 +129,35 @@ describe('VideosService (integration — real Postgres + MinIO)', () => {
       expect(await videoRepository.count()).toBe(0);
     });
   });
+
+  describe('resumeUpload', () => {
+    it('should report the stored part and re-sign only the missing one (1 of 2 uploaded to real MinIO)', async () => {
+      const { user } = await createUserWithChannel();
+      const partSize = 64 * 1024 * 1024;
+      const started = await service.startUpload(user.id, {
+        file_name: 'aula.mp4',
+        content_type: 'video/mp4',
+        size_bytes: partSize + 1024 * 1024,
+      });
+      expect(started.upload.part_count).toBe(2);
+
+      const put = await fetch(started.upload.parts[0].url, {
+        method: 'PUT',
+        body: new Uint8Array(partSize),
+      });
+      expect(put.status).toBe(200);
+
+      const resumed = await service.resumeUpload(user.id, started.public_id);
+
+      expect(resumed.uploaded_parts).toEqual([
+        {
+          part_number: 1,
+          etag: put.headers.get('etag'),
+          size_bytes: partSize,
+        },
+      ]);
+      expect(resumed.parts.map((p) => p.part_number)).toEqual([2]);
+      expect(resumed.part_count).toBe(2);
+    });
+  });
 });
