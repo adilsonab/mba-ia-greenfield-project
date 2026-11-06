@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 12/14 completed
+**SIs:** 13/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -116,9 +116,14 @@
 - **Observations:** none
 
 ### SI-03.13 — Teste e2e do pipeline completo com worker real
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 3 e2e passing (videos-pipeline.e2e-spec.ts, worker real; ~77s, a maior parte gerando o fixture e subindo a app)
+- **Observations:**
+  - Ação 1 (`test/helpers/auth.helper.ts`) já existia desde SI-03.5; foi reutilizado em vez de recriado.
+  - O spec fixa `VIDEO_UPLOAD_PART_SIZE_BYTES` em 5 MiB (mínimo S3) antes de subir a app, para que um fixture de ~7 MiB exija 2 partes; o valor original é restaurado no afterAll.
+  - `testTimeout` global do e2e passou a 120000 ms (polling de até 90s).
+  - Download verificado com `Range: bytes=0-0` (GET assinado não aceita HEAD) para checar o `Content-Disposition` sem baixar o arquivo todo.
+  - Pré-condição do `video-worker` rodando documentada no topo do spec; levar ao CLAUDE.md na SI-03.14.
 
 ### SI-03.14 — Documentação: CLAUDE.md, OpenAPI, diagrama de arquitetura e README
 - **Status:** pending
