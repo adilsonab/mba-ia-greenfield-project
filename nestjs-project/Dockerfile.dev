@@ -1,6 +1,8 @@
 FROM node:25.6.0-slim
 
-RUN apt update && apt install -y procps curl
+# ffmpeg/ffprobe (Debian bookworm package) — used by the video worker and by
+# the media integration/e2e tests that generate fixtures (phase-03-videos/TD-07).
+RUN apt update && apt install -y procps curl ffmpeg
 
 WORKDIR /home/node/app
 

@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/14 completed
+**SIs:** 2/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -13,9 +13,12 @@
   - `.env` (local, git-ignored) received the same new keys as `.env.example`.
 
 ### SI-03.2 — Infra: object storage e Redis no Compose, FFmpeg na imagem de dev
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests (Infra) — ACs verified manually: all 5 services running (`storage`, `redis` healthy); host `localhost:9000/minio/health/live` → 200; `redis-cli ping` → PONG; `ffprobe`/`ffmpeg` 5.1.9 in `nestjs-api`
+- **Observations:**
+  - `cgr.dev/chainguard/minio` pinned by digest `sha256:aea6c163749e1caca37f907976dcf337177ddf5f558808f2aa591618fd3a6eef`; `user: "0"` required for the named volume.
+  - The image has no `curl`/`wget`; the healthcheck uses the bundled `mc ready local` with an `MC_HOST_local` alias built from `S3_ACCESS_KEY`/`S3_SECRET_KEY`.
+  - **AC #3 wording vs reality:** `curl http://storage.localhost:9000/...` inside `nestjs-api` returns `000` because curl (7.88, RFC 6761) hard-wires every `*.localhost` name to 127.0.0.1 without asking DNS. The alias itself works: Docker DNS resolves `storage.localhost` → storage container (172.21.0.4), Node `fetch` and `http.get` return 200, and `curl --resolve storage.localhost:9000:<docker-dns-ip>` returns 200. In-container consumers of presigned URLs are Node (supertest/fetch), so TD-03 holds; the curl caveat must be documented in SI-03.14 (`nestjs-project/CLAUDE.md`).
 
 ### SI-03.3 — StorageModule: clientes S3, bucket, multipart e URLs pré-assinadas
 - **Status:** pending
