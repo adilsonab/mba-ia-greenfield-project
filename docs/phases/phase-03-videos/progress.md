@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/14 completed
+**SIs:** 4/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -21,9 +21,15 @@
   - **AC #3 wording vs reality:** `curl http://storage.localhost:9000/...` inside `nestjs-api` returns `000` because curl (7.88, RFC 6761) hard-wires every `*.localhost` name to 127.0.0.1 without asking DNS. The alias itself works: Docker DNS resolves `storage.localhost` → storage container (172.21.0.4), Node `fetch` and `http.get` return 200, and `curl --resolve storage.localhost:9000:<docker-dns-ip>` returns 200. In-container consumers of presigned URLs are Node (supertest/fetch), so TD-03 holds; the curl caveat must be documented in SI-03.14 (`nestjs-project/CLAUDE.md`).
 
 ### SI-03.3 — StorageModule: clientes S3, bucket, multipart e URLs pré-assinadas
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 14 passing (`storage.service.integration-spec.ts`, `storage-presign.integration-spec.ts`, `storage.module.spec.ts`) against the real MinIO service — first run; `tsc --noEmit` exit 0
+- **Observations:**
+  - **TD-03 proven:** presigned `UploadPart` and `GetObject` URLs are signed against `S3_PUBLIC_ENDPOINT` (`storage.localhost:9000`) and Node `fetch` from inside the `nestjs-api` container uploads parts (200 + `ETag`), reads with `Range` (206 + `Content-Range`) and downloads with `Content-Disposition: attachment`.
+  - Both `S3Client`s set `requestChecksumCalculation: 'WHEN_REQUIRED'` / `responseChecksumValidation: 'WHEN_REQUIRED'`: the SDK default (`WHEN_SUPPORTED`, confirmed via Context7) adds CRC32 checksums to `UploadPart`/`PutObject`, which a presigned part URL would force the uploader to match. Not captured in `library-refs.md`; worth adding on the next `/plan-resolve`.
+  - Added `abortMultipartUpload` beyond the plan's operation list — needed by the SI-03.6 test spec ("multipart descartado → 410") and by test cleanup; it maps `NoSuchUpload` like the other multipart calls.
+  - Storage-level errors (`StorageUploadNotFoundError`, `StorageInvalidPartError`) live in `src/storage/storage.errors.ts`; `EntityTooSmall` is also mapped to `StorageInvalidPartError`. `headObject` returns `null` for missing keys (absence is a valid result, per `.claude/rules/nestjs-services.md`).
+  - Integration tests use a unique throw-away bucket per suite (`src/test/storage-test-bucket.ts`), which also proves the bucket is created on `onModuleInit`; no buckets are left behind.
+  - `fetch` body typed as `new Uint8Array(buffer)` — `@types/node` 22 does not accept `Buffer<ArrayBufferLike>` as `BodyInit`.
 
 ### SI-03.4 — Entidade Video e migration CreateVideos
 - **Status:** completed
