@@ -14,6 +14,10 @@ const MANAGED_TABLES = [
   'verification_tokens',
 ];
 
+// Postgres enum types outlive DROP TABLE; they must be dropped explicitly or
+// re-running the migrations against an already-migrated DB fails.
+const MANAGED_TYPES = ['verification_tokens_type_enum'];
+
 describe('Database migrations (integration)', () => {
   let dataSource: DataSource;
 
@@ -37,13 +41,24 @@ describe('Database migrations (integration)', () => {
       ),
       dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
     ]);
+
+    await Promise.all(
+      MANAGED_TYPES.map((type) =>
+        dataSource.query(`DROP TYPE IF EXISTS "public"."${type}"`),
+      ),
+    );
   });
 
   afterAll(async () => {
     // The second test undoes the last migration, leaving token tables missing.
     // Re-apply so the shared DB is fully migrated when subsequent suites run.
-    await dataSource.runMigrations();
-    await dataSource.destroy();
+    // destroy() runs in finally so a failure here never leaves an open
+    // connection that keeps Jest hanging.
+    try {
+      await dataSource.runMigrations();
+    } finally {
+      await dataSource.destroy();
+    }
   });
 
   it('should apply all migrations and create all four tables', async () => {

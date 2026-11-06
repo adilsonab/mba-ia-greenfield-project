@@ -32,4 +32,13 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    // `expect(mock.method).toHaveBeenCalled()` only inspects the jest.fn and
+    // never invokes it, so unbound-method is a false positive in tests
+    // (typescript-eslint points Jest users to a Jest-aware variant instead).
+    files: ['**/*.spec.ts', '**/*.integration-spec.ts', '**/*.e2e-spec.ts'],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
 );

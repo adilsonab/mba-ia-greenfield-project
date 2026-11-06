@@ -32,8 +32,10 @@ describe('envValidationSchema — SWAGGER_ENABLED', () => {
   });
 
   it('should apply default false when SWAGGER_ENABLED is not set', () => {
-    const { value, error } = validate({});
-    expect(error).toBeUndefined();
+    const result = validate({});
+    expect(result.error).toBeUndefined();
+    // Joi types `value` as `any` on the error branch of ValidationResult.
+    const value = result.value as Record<string, string>;
     expect(value.SWAGGER_ENABLED).toBe('false');
   });
 });
