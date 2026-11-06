@@ -523,4 +523,51 @@ describe('VideosService', () => {
       ).rejects.toBeInstanceOf(VideoNotFoundException);
     });
   });
+  describe('getDownloadUrl', () => {
+    it('should presign the original as an attachment named after the uploaded file', async () => {
+      const expiresAt = new Date('2026-11-06T11:00:00Z');
+      repo.findOne.mockResolvedValueOnce(
+        storedVideo({
+          processing_status: VideoProcessingStatus.READY,
+          original_file_name: 'aula.mp4',
+        }),
+      );
+      storage.presignGetObject.mockResolvedValueOnce({
+        url: 'https://s/download',
+        expiresAt,
+      });
+
+      const result = await service.getDownloadUrl('user-1', 'pubVideo001');
+
+      expect(storage.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/original',
+        { downloadFileName: 'aula.mp4' },
+      );
+      expect(result).toEqual({
+        url: 'https://s/download',
+        expires_at: '2026-11-06T11:00:00.000Z',
+      });
+    });
+
+    it.each([
+      VideoProcessingStatus.AWAITING_UPLOAD,
+      VideoProcessingStatus.PROCESSING,
+      VideoProcessingStatus.FAILED,
+    ])('should raise VIDEO_NOT_READY while the video is %s', async (status) => {
+      repo.findOne.mockResolvedValueOnce(
+        storedVideo({ processing_status: status }),
+      );
+
+      await expect(
+        service.getDownloadUrl('user-1', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(VideoNotReadyException);
+      expect(storage.presignGetObject).not.toHaveBeenCalled();
+    });
+
+    it('should not disclose videos of other users', async () => {
+      await expect(
+        service.getDownloadUrl('user-2', 'pubVideo001'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+    });
+  });
 });

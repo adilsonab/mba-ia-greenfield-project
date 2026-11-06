@@ -313,6 +313,23 @@ export class VideosService {
     return { url: signed.url, expires_at: signed.expiresAt.toISOString() };
   }
 
+  /**
+   * Short-lived URL that downloads the original as an attachment named after
+   * the uploaded file; the Content-Disposition override is signed into the URL
+   * (phase-03-videos/TD-14, TD-15).
+   */
+  async getDownloadUrl(
+    userId: string,
+    publicId: string,
+  ): Promise<SignedUrlResponseDto> {
+    const video = await this.findOwnedReadyVideo(userId, publicId);
+    const signed = await this.storageService.presignGetObject(
+      video.storage_key,
+      { downloadFileName: video.original_file_name },
+    );
+    return { url: signed.url, expires_at: signed.expiresAt.toISOString() };
+  }
+
   /** Stream/download are only available once processing finished (TD-15). */
   private async findOwnedReadyVideo(
     userId: string,

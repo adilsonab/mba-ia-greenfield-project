@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/14 completed
+**SIs:** 12/14 completed
 
 ### SI-03.1 — Dependências e namespaces de configuração (storage, fila, vídeos)
 - **Status:** completed
@@ -111,8 +111,8 @@
   - e2e setup completes the multipart through `StorageService` instead of `POST …/upload/complete`: the endpoint would enqueue a `video.process` job that the running `video-worker` processes (random bytes → `failed`), racing the test's direct `ready` update. Same rule applies to SI-03.12's spec.
 
 ### SI-03.12 — Endpoint GET /videos/:publicId/download (download do vídeo)
-- **Status:** pending
-- **Tests:** —
+- **Status:** completed
+- **Tests:** 36 unit passing (videos.service.spec.ts, +5 getDownloadUrl); 4 e2e passing (videos-download.e2e-spec.ts)
 - **Observations:** none
 
 ### SI-03.13 — Teste e2e do pipeline completo com worker real

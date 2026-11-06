@@ -216,4 +216,38 @@ export class VideosController {
   ): Promise<SignedUrlResponseDto> {
     return this.videosService.getStreamUrl(user.sub, publicId);
   }
+
+  @Get(':publicId/download')
+  @ApiOperation({
+    summary: 'Get a download URL',
+    description:
+      'Returns a short-lived presigned URL that downloads the original file as an attachment (Content-Disposition: attachment; filename="<original file name>").',
+  })
+  @ApiParam({ name: 'publicId', description: 'Video public id (11 chars)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Presigned download URL',
+    type: SignedUrlResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found (or not owned by the caller)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getDownloadUrl(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<SignedUrlResponseDto> {
+    return this.videosService.getDownloadUrl(user.sub, publicId);
+  }
 }
