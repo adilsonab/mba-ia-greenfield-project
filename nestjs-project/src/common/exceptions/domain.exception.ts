@@ -48,3 +48,49 @@ export class TokenReuseDetectedException extends DomainException {
     );
   }
 }
+
+// Phase 03 — videos (### Error Catalog of docs/phases/phase-03-videos/phase-03-videos.md)
+
+export class VideoNotFoundException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_FOUND', 404, 'Video not found');
+  }
+}
+
+export class VideoUploadNotInProgressException extends DomainException {
+  constructor() {
+    super(
+      'VIDEO_UPLOAD_NOT_IN_PROGRESS',
+      409,
+      'Video upload is not in progress',
+    );
+  }
+}
+
+export class UploadIncompleteException extends DomainException {
+  constructor() {
+    super('UPLOAD_INCOMPLETE', 400, 'Upload parts are missing or invalid');
+  }
+}
+
+export class UploadExpiredException extends DomainException {
+  constructor() {
+    super('UPLOAD_EXPIRED', 410, 'Upload session has expired');
+  }
+}
+
+export class UploadSizeMismatchException extends DomainException {
+  constructor() {
+    super(
+      'UPLOAD_SIZE_MISMATCH',
+      422,
+      'Uploaded file size does not match the declared size',
+    );
+  }
+}
+
+export class VideoNotReadyException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_READY', 409, 'Video is not ready');
+  }
+}

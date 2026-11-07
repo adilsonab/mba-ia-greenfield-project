@@ -1,6 +1,6 @@
 services:
   nestjs-api:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.dev
     ports:
@@ -12,6 +12,10 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      storage:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   db:
     image: postgres:17
@@ -33,4 +37,69 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # S3-compatible object storage (phase-03-videos/TD-01). Official MinIO images
+  # are no longer published; the Chainguard build is the same MinIO server.
+  # Pinned by digest because the free tier only exposes `latest`.
+  storage:
+    image: cgr.dev/chainguard/minio@sha256:aea6c163749e1caca37f907976dcf337177ddf5f558808f2aa591618fd3a6eef
+    command: server /data --console-address :9001
+    # The image runs as `nonroot` and fails with "file access denied" on a
+    # named volume owned by root.
+    user: "0"
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY}
+      # Alias used only by the healthcheck below (`mc` ships in the image; curl does not).
+      - MC_HOST_local=http://${S3_ACCESS_KEY}:${S3_SECRET_KEY}@localhost:9000
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - storage-data:/data
+    networks:
+      default:
+        # Public host of presigned URLs (phase-03-videos/TD-03): browsers resolve
+        # *.localhost to 127.0.0.1 (port 9000 published above) and containers
+        # resolve it to this service through the alias, so the same signed URL
+        # works on both sides.
+        aliases:
+          - storage.localhost
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
+  # Video worker (phase-03-videos/TD-06): same codebase and image as the API,
+  # separate process without HTTP, consuming the `video-processing` queue.
+  # Runs from source (ts-node + node --watch) so it never races the API's
+  # `nest start --watch` over the shared dist/ folder. Needs `npm install`
+  # once (shared node_modules through the bind mount).
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["npm", "run", "start:worker:dev"]
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Queue backend for BullMQ (phase-03-videos/TD-05).
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  storage-data:
